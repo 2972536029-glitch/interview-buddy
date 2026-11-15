@@ -1,0 +1,28 @@
+# dependencies
+node_modules/
+
+# next.js
+.next/
+out/
+
+# production
+dist/
+
+# env & secrets —— 密钥永不进仓库(服务端运行时直接读本机 token 文件)
+.env
+.env.local
+.env.*.local
+*.token
+
+# logs
+*.log
+npm-debug.log*
+
+# os
+.DS_Store
+Thumbs.db
+
+# ai tooling
+.ai/
+.claude/
+.zcode/
