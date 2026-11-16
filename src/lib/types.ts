@@ -10,7 +10,7 @@ export const JOB_FAMILIES: ReadonlyArray<{
 }> = [
   { id: "frontend", label: "前端开发", desc: "性能优化 / 框架原理 / 工程化" },
   { id: "operations", label: "产品运营", desc: "增长案例 / 数据分析 / 用户调研" },
-  { id: "general", label: "通用", desc: "职业规划 / 自我认知 / 学习能力" },
+  { id: "general", label: "通用校招", desc: "还没定方向从这里开始 / 职业规划 / 软素质" },
 ];
 
 export const INTERVIEW_TYPES: ReadonlyArray<{
@@ -19,7 +19,7 @@ export const INTERVIEW_TYPES: ReadonlyArray<{
   desc: string;
 }> = [
   { id: "behavioral", label: "行为面", desc: "自我介绍 / 项目深挖 / 团队合作 / 挫折应对" },
-  { id: "technical", label: "专业面", desc: "按岗位族出专业题" },
+  { id: "technical", label: "专业面", desc: "按练习方向出专业题" },
   { id: "hr", label: "HR 面", desc: "自我认知 / 价值观 / 稳定性 / 谈 offer" },
   { id: "stress", label: "压力面", desc: "质疑式追问 / 连续打假 / 抗压应变" },
 ];

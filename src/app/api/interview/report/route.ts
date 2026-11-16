@@ -77,7 +77,7 @@ export async function POST(req: Request) {
     { role: "system" as const, content: reportSystemPrompt() },
     {
       role: "user" as const,
-      content: `岗位族:${jobFamily};面试类型:${interviewType}。
+      content: `练习方向:${jobFamily};面试类型:${interviewType}。
 逐题数据(JSON):
 ${JSON.stringify(material, null, 2)}
 ${notesSection}

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ChatMessage,
   DimScores,
@@ -19,6 +19,16 @@ import { newId, postJson, streamText } from "@/lib/client";
 import { settingsPayload } from "@/lib/models";
 import { estimateSeconds } from "@/lib/scoring";
 import ScoreCard from "@/components/ScoreCard";
+import ChatBubble from "@/components/ChatBubble";
+import SessionGradesHistory from "@/components/SessionGradesHistory";
+import { Skeleton, ScoreCardSkeleton } from "@/components/Skeleton";
+import {
+  MessageSquare,
+  Sparkles,
+  AlertTriangle,
+  Loader,
+  ArrowRight,
+} from "@/components/icons";
 
 // 面试页状态机: loading -> notfound / (asking <-> await) -> finished
 // 首题与断点续答(退出时回答已存但下一问未生成)自动续跑
@@ -37,6 +47,11 @@ export default function InterviewPage() {
   }>({ loading: false, grade: null, error: null });
   const [banner, setBanner] = useState<string | null>(null);
   const [reportBusy, setReportBusy] = useState(false);
+  // 正在朗读的消息 id(TTS 状态可视化,I4);纯 UI 状态,不参与业务状态机
+  const [speakingId, setSpeakingId] = useState<string | null>(null);
+  // speakingId 的 ref 镜像(A-4):onToggleSpeak 读 ref 判断"再点一次停止",
+  // 才能做成 useCallback([]) 引用稳定,ChatBubble 的 memo 才不被新函数引用打穿
+  const speakingIdRef = useRef<string | null>(null);
 
   // 所有动作经 sessionRef 同步读写,避免"点评"与"下一问"并行时的丢失更新
   const sessionRef = useRef<Session | null>(null);
@@ -49,6 +64,16 @@ export default function InterviewPage() {
     followupNo: number;
   } | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  // A-1:提交清空不走 onChange,需在提交流程里手动重置 textarea 内联高度
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // A-2:用户是否停在对话底部附近(距底 ≤ 80px);仅贴底时流式输出才自动跟滚
+  const stickToBottomRef = useRef(true);
+
+  // speakingId 的 ref + state 双写:ref 供稳定回调读取,state 驱动仅对应气泡重渲
+  function setSpeakingBoth(id: string | null) {
+    speakingIdRef.current = id;
+    setSpeakingId(id);
+  }
 
   function patchSession(mutate: (s: Session) => Session): Session | null {
     const cur = sessionRef.current;
@@ -86,15 +111,30 @@ export default function InterviewPage() {
     return { id: newId(), role: "interviewer", content, kind, ts: Date.now() };
   }
 
-  // TTS 朗读(浏览器自带 speechSynthesis,零依赖)
-  function speak(text: string) {
+  // TTS 朗读(浏览器自带 speechSynthesis,零依赖)。speakId 用于按钮态可视化,再点一次停止。
+  // useCallback([]) 引用稳定(A-4):依赖全部走 ref,否则每次渲染新函数会打穿 ChatBubble 的 memo
+  const onToggleSpeak = useCallback((speakId: string, text: string) => {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
+    const synth = window.speechSynthesis;
+    // 同一条再点一次 = 停止朗读
+    if (speakingIdRef.current === speakId) {
+      synth.cancel();
+      setSpeakingBoth(null);
+      return;
+    }
+    synth.cancel();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = "zh-CN";
     u.rate = 1.0;
-    window.speechSynthesis.speak(u);
-  }
+    u.onend = () => {
+      if (speakingIdRef.current === speakId) setSpeakingBoth(null);
+    };
+    u.onerror = () => {
+      if (speakingIdRef.current === speakId) setSpeakingBoth(null);
+    };
+    setSpeakingBoth(speakId);
+    synth.speak(u);
+  }, []);
   async function askNext(snap: Session, forceContinue = false): Promise<void> {
     if (busyRef.current) return;
     busyRef.current = true;
@@ -196,6 +236,8 @@ export default function InterviewPage() {
       ],
     }));
     setAnswer("");
+    // A-1:清空不触发 onChange,内联高度会残留 220px,这里手动回落到 rows=4 默认高度
+    if (textareaRef.current) textareaRef.current.style.height = "auto";
     // 并行:逐题点评(不阻塞)+ 下一问(askNext 内部管理 busyRef)
     void fetchGrade(lastQ ? lastQ.content : "", text, cur.currentQuestionIndex, cur.followups);
     await askNext(sessionRef.current ?? cur);
@@ -310,10 +352,11 @@ export default function InterviewPage() {
       setPhase("await");
     }
   }, []);
-  // 新消息或流式增量到达时滚到底部
+  // 新消息或流式增量到达时滚到底部 —— 仅当用户本来就停在底部附近(A-2)。
+  // 上翻看历史时不被强拉回底;手动滚回底部(距底 ≤ 80px)后恢复跟滚。纯 UI 行为,不动业务状态机
   useEffect(() => {
     const el = scrollRef.current;
-    if (el) el.scrollTop = el.scrollHeight;
+    if (el && stickToBottomRef.current) el.scrollTop = el.scrollHeight;
   }, [session, streamBuf]);
   const displayStream = streamBuf
     .replace(/^\s*<(新题|追问|结束)>\s*/, "")
@@ -322,13 +365,27 @@ export default function InterviewPage() {
   const chars = answer.trim().length;
 
   if (phase === "loading") {
-    return <p className="py-20 text-center text-slate-400">加载中…</p>;
+    return (
+      <div className="space-y-4" aria-label="加载中">
+        <Skeleton className="h-6 w-56" />
+        <div className="grid gap-4 lg:grid-cols-3">
+          <div className="rounded-2xl border border-line bg-surface p-4 lg:col-span-2">
+            <div className="space-y-3">
+              <Skeleton className="h-16 w-[85%] rounded-2xl" />
+              <Skeleton className="ml-auto h-12 w-[70%] rounded-2xl" />
+              <Skeleton className="h-12 w-[80%] rounded-2xl" />
+            </div>
+          </div>
+          <ScoreCardSkeleton className="rounded-2xl border border-line bg-surface p-4" />
+        </div>
+      </div>
+    );
   }
   if (phase === "notfound") {
     return (
       <div className="py-20 text-center">
-        <p className="text-slate-500">会话不存在或已被删除。</p>
-        <Link href="/" className="mt-3 inline-block text-blue-600 hover:underline">
+        <p className="text-ink-secondary">会话不存在或已被删除。</p>
+        <Link href="/" className="mt-3 inline-block text-primary hover:underline">
           回首页
         </Link>
       </div>
@@ -337,91 +394,136 @@ export default function InterviewPage() {
   if (!session) return null;
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="page-enter space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="font-bold">
+          <h1 className="text-lg font-bold">
             {jobFamilyLabel(session.jobFamily)} · {interviewTypeLabel(session.interviewType)}
           </h1>
-          <p className="mt-0.5 text-xs text-slate-500">
-            第 {session.currentQuestionIndex || "-"} 题,共 {TOTAL_QUESTIONS} 题 · 当前题已追问 {session.followups} 次
+          <p className="mt-1 text-xs text-ink-tertiary">
+            第 {session.currentQuestionIndex || "-"} 题 · 共 {TOTAL_QUESTIONS} 题 · 当前题已追问 {session.followups} 次
           </p>
         </div>
         {phase !== "finished" ? (
           <button
             onClick={finishNow}
             disabled={reportBusy}
-            className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            className="no-print rounded-lg border border-line bg-surface px-3 py-1.5 text-xs text-ink-secondary transition hover:border-line-strong hover:bg-surface-muted disabled:opacity-50"
           >
             结束并出报告
           </button>
         ) : (
-          <Link href="/history" className="text-xs text-slate-500 hover:underline">
+          <Link href="/history" className="text-xs text-ink-tertiary hover:underline">
             去历史记录 →
           </Link>
         )}
       </div>
 
+      {/* I2 步骤进度条:5 题显性化(已完成实心 / 当前描边 / 未到置灰) */}
+      <div
+        className="flex items-center gap-1.5"
+        role="img"
+        aria-label={`进度:第 ${session.currentQuestionIndex || 0} 题,共 ${TOTAL_QUESTIONS} 题`}
+      >
+        {Array.from({ length: TOTAL_QUESTIONS }).map((_, i) => {
+          const n = i + 1;
+          const idx = session.currentQuestionIndex;
+          const allDone = phase === "finished";
+          const done = allDone || n < idx;
+          const current = !allDone && n === idx;
+          return (
+            <div key={n} className="flex flex-1 items-center gap-1.5">
+              <span
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold transition ${
+                  done
+                    ? "bg-primary text-white"
+                    : current
+                      ? "bg-primary-soft text-primary ring-2 ring-primary/40"
+                      : "bg-surface-inset text-ink-tertiary"
+                }`}
+              >
+                {n}
+              </span>
+              {n < TOTAL_QUESTIONS && (
+                <span className={`h-0.5 flex-1 rounded ${done ? "bg-primary" : "bg-line"}`} />
+              )}
+            </div>
+          );
+        })}
+      </div>
+
       {banner && (
-        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
-          {banner}
-          <button
-            onClick={() => {
-              const s = sessionRef.current;
-              if (s) void askNext(s);
-            }}
-            className="ml-2 font-semibold underline"
-          >
-            重新出题
-          </button>
+        <div className="fade-in flex items-start gap-2.5 rounded-xl border border-warn/40 bg-warn-soft px-4 py-2.5 text-sm text-warn">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <div className="flex-1">
+            {banner}
+            <button
+              onClick={() => {
+                const s = sessionRef.current;
+                if (s) void askNext(s);
+              }}
+              className="ml-2 rounded-md bg-warn px-2.5 py-1 text-xs font-semibold text-surface transition hover:opacity-90"
+            >
+              重新出题
+            </button>
+          </div>
         </div>
       )}
 
       <div className="grid gap-4 lg:grid-cols-3">
-        <div className="flex flex-col rounded-2xl bg-white shadow-sm lg:col-span-2">
-          <div ref={scrollRef} className="thin-scroll h-[56vh] overflow-y-auto p-4">
+        {/* G5:移动端评分卡提到对话上方(order-1),桌面端恢复右栏 */}
+        <div className="order-2 flex flex-col rounded-2xl border border-line bg-surface shadow-sm lg:order-1 lg:col-span-2">
+          <div
+            ref={scrollRef}
+            onScroll={() => {
+              // A-2:记录用户是否停在底部附近(scrollHeight 增长不触发 scroll 事件,仅真实滚动更新)
+              const el = scrollRef.current;
+              if (el) {
+                stickToBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight <= 80;
+              }
+            }}
+            className="thin-scroll h-[50vh] overflow-y-auto p-4 lg:h-[56vh]"
+          >
             {session.messages.map((m) => (
-              <div key={m.id} className={`mb-3 flex ${m.role === "candidate" ? "justify-end" : "justify-start"}`}>
-                <div
-                  className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                    m.kind === "closing"
-                      ? "border border-emerald-300 bg-emerald-50 text-slate-800"
-                      : m.role === "candidate"
-                        ? "bg-blue-600 text-white"
-                        : "bg-slate-100 text-slate-800"
-                  }`}
-                >
-                  {m.content}
-                  {m.role === "interviewer" && (
-                    <button
-                      onClick={() => speak(m.content)}
-                      className="mt-1.5 block text-[10px] text-slate-400 hover:text-blue-600"
-                      title="朗读本题"
-                    >
-                      🔊 朗读
-                    </button>
-                  )}
-                </div>
-              </div>
+              <ChatBubble
+                key={m.id}
+                m={m}
+                isSpeaking={speakingId === m.id}
+                onToggleSpeak={onToggleSpeak}
+              />
             ))}
             {phase === "asking" && (
-              <div className="mb-3 flex justify-start">
-                <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-slate-100 px-4 py-2.5 text-sm leading-relaxed text-slate-800">
+              <div className="bubble-in mb-3 flex items-end justify-start gap-2">
+                <span
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-soft text-primary"
+                  title="面试官"
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                </span>
+                <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl bg-surface-inset px-4 py-2.5 text-sm leading-relaxed text-ink">
                   {displayStream || "…"}
-                  <span className="ml-0.5 inline-block h-4 w-2 animate-pulse align-middle bg-slate-400" />
+                  {/* I3 呼吸光标 */}
+                  <span className="ml-0.5 inline-block h-4 w-[2px] animate-pulse rounded-full bg-primary align-middle" />
                 </div>
               </div>
             )}
           </div>
 
           {phase === "await" && (
-            <div className="border-t border-slate-100 p-4">
+            <div className="border-t border-line p-4">
               <textarea
+                ref={textareaRef}
                 value={answer}
-                onChange={(e) => setAnswer(e.target.value)}
+                onChange={(e) => {
+                  setAnswer(e.target.value);
+                  // I6:自增高(上限 220px,超出内部滚动),替换固定 4 行
+                  const el = e.target;
+                  el.style.height = "auto";
+                  el.style.height = `${Math.min(el.scrollHeight, 220)}px`;
+                }}
                 placeholder="输入你的回答…(Ctrl+Enter 快捷提交)"
                 rows={4}
-                className="thin-scroll w-full resize-none rounded-xl border border-slate-200 p-3 text-sm focus:border-blue-400 focus:outline-none"
+                className="thin-scroll max-h-[220px] w-full resize-none rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink transition placeholder:text-ink-tertiary focus:border-primary/60 focus:outline-none focus:ring-2 focus:ring-primary/15"
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                     e.preventDefault();
@@ -429,43 +531,60 @@ export default function InterviewPage() {
                   }
                 }}
               />
-              <div className="mt-2 flex items-center justify-between">
-                <span className="text-xs text-slate-400">
-                  {chars} 字 ≈ {estimateSeconds(answer)} 秒(200 字 ≈ 1 分钟)
+              <div className="mt-2 flex items-center justify-between gap-2">
+                <span className="flex items-center gap-1.5 text-xs text-ink-tertiary">
+                  <span className="rounded-md bg-surface-inset px-2 py-0.5 font-medium tabular-nums">{chars} 字</span>
+                  ≈ {estimateSeconds(answer)} 秒(200 字 ≈ 1 分钟)
                 </span>
                 <button
                   onClick={() => void submitAnswer()}
                   disabled={chars === 0}
-                  className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-40"
+                  className="flex items-center gap-1.5 whitespace-nowrap rounded-xl bg-primary px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-primary-hover active:scale-[0.98] disabled:opacity-40"
                 >
                   提交回答
+                  <ArrowRight className="h-4 w-4" />
                 </button>
               </div>
             </div>
           )}
           {phase === "asking" && (
-            <div className="border-t border-slate-100 p-4 text-center text-sm text-slate-400">
+            <div className="fade-in flex items-center justify-center gap-2 border-t border-line p-4 text-center text-sm text-ink-tertiary">
+              <Loader className="h-4 w-4" />
               面试官输出中…(逐题点评并行生成)
             </div>
           )}
           {phase === "finished" && (
-            <div className="flex items-center justify-between border-t border-slate-100 p-4">
-              <span className="text-sm text-slate-500">本场面试已结束</span>
+            <div className="fade-in flex flex-wrap items-center justify-between gap-2 border-t border-line bg-gradient-to-r from-primary-soft to-surface px-4 py-3">
+              <span className="flex items-center gap-2 text-sm text-ink-secondary">
+                <Sparkles className="h-4 w-4 text-primary" />
+                本场面试已结束
+              </span>
               <div className="flex gap-2">
                 {session.report ? (
                   <Link
                     href={`/report?id=${session.id}`}
-                    className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700"
+                    className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-primary to-primary-hover px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 active:scale-[0.98]"
                   >
+                    <Sparkles className="h-4 w-4" />
                     查看复盘报告
                   </Link>
                 ) : (
                   <button
                     onClick={() => void generateReport()}
                     disabled={reportBusy}
-                    className="rounded-xl bg-blue-600 px-5 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:opacity-50"
+                    className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-primary to-primary-hover px-5 py-2 text-sm font-semibold text-white shadow-sm transition hover:opacity-95 active:scale-[0.98] disabled:opacity-50"
                   >
-                    {reportBusy ? "生成中…" : "生成复盘报告"}
+                    {reportBusy ? (
+                      <>
+                        <Loader className="h-4 w-4" />
+                        生成中…
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4" />
+                        生成复盘报告
+                      </>
+                    )}
                   </button>
                 )}
               </div>
@@ -473,7 +592,7 @@ export default function InterviewPage() {
           )}
         </div>
 
-        <div className="space-y-4">
+        <div className="order-1 space-y-4 lg:order-2">
           <ScoreCard
             grade={gradeState.grade}
             loading={gradeState.loading}
@@ -481,8 +600,10 @@ export default function InterviewPage() {
             questionIndex={session.currentQuestionIndex}
             onRetry={retryGrade}
           />
-          <div className="rounded-2xl bg-white p-4 text-xs leading-relaxed text-slate-500 shadow-sm">
-            <p className="font-semibold text-slate-600">玩法说明</p>
+          {/* A-3:本场点评回顾(折叠),答到后面也能回看前面题目的点评 */}
+          <SessionGradesHistory grades={session.grades} />
+          <div className="rounded-2xl border border-line bg-surface p-4 text-xs leading-relaxed text-ink-secondary shadow-sm">
+            <p className="font-semibold text-ink">玩法说明</p>
             <p className="mt-1">· 每题至少一次追问,答完先点评再追问/换题</p>
             <p>· 共 5 题,答完自动生成复盘报告</p>
             <p>· 中途关掉页面没关系,历史记录里可续练</p>

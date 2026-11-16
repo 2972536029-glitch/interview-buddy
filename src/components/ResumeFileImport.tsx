@@ -5,6 +5,7 @@
 import { useRef, useState } from "react";
 import { extractResumeText } from "@/lib/extractResume";
 import { postJson } from "@/lib/client";
+import { FileUp, Loader } from "./icons";
 
 function arrayBufferToBase64(buf: ArrayBuffer): string {
   const bytes = new Uint8Array(buf);
@@ -77,11 +78,16 @@ export default function ResumeFileImport({ onText, label }: Props) {
         type="button"
         onClick={() => inputRef.current?.click()}
         disabled={busy}
-        className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+        className="flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-xs text-ink-secondary transition hover:border-primary/40 hover:text-primary disabled:opacity-50"
       >
+        {busy ? (
+          <Loader className="h-3.5 w-3.5" />
+        ) : (
+          <FileUp className="h-3.5 w-3.5" />
+        )}
         {busy ? "解析中…" : label ?? "导入简历文件"}
       </button>
-      {error && <p className="mt-1 text-xs text-red-600">{error}</p>}
+      {error && <p className="mt-1 text-xs text-danger">{error}</p>}
     </div>
   );
 }

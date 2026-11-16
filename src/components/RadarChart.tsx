@@ -1,4 +1,5 @@
-// 四维雷达图(手写 SVG,不引组件库)
+// 四维雷达图(手写 SVG,不引组件库 —— 任务书红线 3)
+// 颜色走 Tailwind 语义 token 类(stroke-line / fill-primary 等),暗色模式自动适配
 import { DimScores } from "@/lib/types";
 
 const DIMS: Array<{ key: keyof DimScores; label: string }> = [
@@ -25,6 +26,11 @@ export default function RadarChart({ dims, size = 260 }: { dims: DimScores; size
       .map((n) => n.toFixed(1))
       .join(",")
   ).join(" ");
+  const avg =
+    (["structure", "quantification", "colloquial", "duration"] as const).reduce(
+      (sum, k) => sum + (dims[k] ?? 0),
+      0
+    ) / DIMS.length;
 
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label="四维雷达图">
@@ -33,30 +39,36 @@ export default function RadarChart({ dims, size = 260 }: { dims: DimScores; size
           key={v}
           points={ringPoints(v)}
           fill="none"
-          stroke={v === 5 ? "#cbd5e1" : "#e2e8f0"}
+          className={v === 5 ? "stroke-line-strong" : "stroke-line"}
           strokeWidth="1"
         />
       ))}
       {DIMS.map((_, i) => {
         const [x, y] = pt(i, R);
-        return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke="#e2e8f0" strokeWidth="1" />;
+        return <line key={i} x1={cx} y1={cy} x2={x} y2={y} className="stroke-line" strokeWidth="1" />;
       })}
-      <polygon points={dataPoints} fill="rgba(37,99,235,0.15)" stroke="#2563eb" strokeWidth="2" />
+      <polygon points={dataPoints} className="fill-primary/15 stroke-primary" strokeWidth="2" />
+      {/* 数据顶点圆点,增强可读性 */}
+      {DIMS.map((d, i) => {
+        const [x, y] = pt(i, (R * Math.max(0, Math.min(5, dims[d.key] ?? 0))) / 5);
+        return <circle key={d.key} cx={x} cy={y} r="3" className="fill-primary stroke-surface" strokeWidth="1.5" />;
+      })}
+      {/* 中心平均分 */}
+      <text x={cx} y={cy - 14} textAnchor="middle" fontSize="10" className="fill-ink-tertiary">
+        均分
+      </text>
+      <text x={cx} y={cy + 2} textAnchor="middle" fontSize="15" fontWeight="700" className="fill-primary">
+        {avg.toFixed(1)}
+      </text>
       {DIMS.map((d, i) => {
         const [x, y] = pt(i, R + 22);
         const value = dims[d.key] ?? 0;
         return (
           <g key={d.key}>
-            <text
-              x={x}
-              y={y - 4}
-              textAnchor="middle"
-              fontSize="12"
-              fill="#475569"
-            >
+            <text x={x} y={y - 4} textAnchor="middle" fontSize="12" className="fill-ink-secondary">
               {d.label}
             </text>
-            <text x={x} y={y + 12} textAnchor="middle" fontSize="13" fontWeight="700" fill="#2563eb">
+            <text x={x} y={y + 12} textAnchor="middle" fontSize="13" fontWeight="700" className="fill-primary">
               {value.toFixed(1)}
             </text>
           </g>

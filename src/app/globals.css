@@ -2,14 +2,176 @@
 @tailwind components;
 @tailwind utilities;
 
-/* 对话区滚动条微调 */
+/* ============================================================
+   设计 token 本体(亮色)
+   tailwind.config.ts 里的语义色引用这些变量;暗色只覆盖变量,页面零改动
+   ============================================================ */
+:root {
+  --mdz-primary: 79 70 229;        /* indigo-600 */
+  --mdz-primary-hover: 67 56 202;  /* indigo-700 */
+  --mdz-primary-soft: 238 242 255; /* indigo-50 */
+  --mdz-primary-soft-hover: 224 231 255; /* indigo-100 */
+  --mdz-page: 248 250 252;         /* slate-50 */
+  --mdz-surface: 255 255 255;
+  --mdz-surface-muted: 248 250 252;      /* slate-50 */
+  --mdz-surface-inset: 241 245 249;      /* slate-100 */
+  --mdz-line: 226 232 240;         /* slate-200 */
+  --mdz-line-strong: 203 213 225;  /* slate-300 */
+  --mdz-ink: 15 23 42;             /* slate-900 */
+  --mdz-ink-secondary: 71 85 105;  /* slate-600 */
+  --mdz-ink-tertiary: 148 163 184; /* slate-400 */
+  --mdz-danger: 220 38 38;         /* red-600 */
+  --mdz-danger-soft: 254 242 242;  /* red-50 */
+  --mdz-success: 5 150 105;        /* emerald-600 */
+  --mdz-success-soft: 236 253 245; /* emerald-50 */
+  --mdz-warn: 217 119 6;           /* amber-600 */
+  --mdz-warn-soft: 255 251 235;    /* amber-50 */
+}
+
+/* 暗色(G4):默认跟随系统,只覆盖变量,页面零改动 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --mdz-primary: 99 102 241;        /* indigo-500 */
+    --mdz-primary-hover: 129 140 248; /* indigo-400 */
+    --mdz-primary-soft: 49 46 129;    /* indigo-900 */
+    --mdz-primary-soft-hover: 62 61 153;
+    --mdz-page: 2 6 23;               /* slate-950 */
+    --mdz-surface: 15 23 42;          /* slate-900 */
+    --mdz-surface-muted: 15 23 42;    /* slate-900 */
+    --mdz-surface-inset: 30 41 59;    /* slate-800 */
+    --mdz-line: 30 41 59;             /* slate-800 */
+    --mdz-line-strong: 51 65 85;      /* slate-700 */
+    --mdz-ink: 241 245 249;           /* slate-100 */
+    --mdz-ink-secondary: 148 163 184; /* slate-400 */
+    --mdz-ink-tertiary: 100 116 139;  /* slate-500 */
+    --mdz-danger: 248 113 113;        /* red-400 */
+    --mdz-danger-soft: 69 10 10;      /* red-950-ish */
+    --mdz-success: 52 211 153;        /* emerald-400 */
+    --mdz-success-soft: 2 44 34;      /* emerald-950-ish */
+    --mdz-warn: 251 191 36;            /* amber-400 */
+    --mdz-warn-soft: 53 38 8;         /* amber-950-ish */
+  }
+}
+
+/* 手动切换(G4+):html.light / html.dark 特异性(0,1,1)高于 :root(0,1,0),
+   可覆盖上面的系统偏好,供 header 主题切换按钮使用(偏好存 mdz.theme.v1,仅 UI 层) */
+html.light {
+  --mdz-primary: 79 70 229;
+  --mdz-primary-hover: 67 56 202;
+  --mdz-primary-soft: 238 242 255;
+  --mdz-primary-soft-hover: 224 231 255;
+  --mdz-page: 248 250 252;
+  --mdz-surface: 255 255 255;
+  --mdz-surface-muted: 248 250 252;
+  --mdz-surface-inset: 241 245 249;
+  --mdz-line: 226 232 240;
+  --mdz-line-strong: 203 213 225;
+  --mdz-ink: 15 23 42;
+  --mdz-ink-secondary: 71 85 105;
+  --mdz-ink-tertiary: 148 163 184;
+  --mdz-danger: 220 38 38;
+  --mdz-danger-soft: 254 242 242;
+  --mdz-success: 5 150 105;
+  --mdz-success-soft: 236 253 245;
+  --mdz-warn: 217 119 6;
+  --mdz-warn-soft: 255 251 235;
+}
+html.dark {
+  --mdz-primary: 99 102 241;
+  --mdz-primary-hover: 129 140 248;
+  --mdz-primary-soft: 49 46 129;
+  --mdz-primary-soft-hover: 62 61 153;
+  --mdz-page: 2 6 23;
+  --mdz-surface: 15 23 42;
+  --mdz-surface-muted: 15 23 42;
+  --mdz-surface-inset: 30 41 59;
+  --mdz-line: 30 41 59;
+  --mdz-line-strong: 51 65 85;
+  --mdz-ink: 241 245 249;
+  --mdz-ink-secondary: 148 163 184;
+  --mdz-ink-tertiary: 100 116 139;
+  --mdz-danger: 248 113 113;
+  --mdz-danger-soft: 69 10 10;
+  --mdz-success: 52 211 153;
+  --mdz-success-soft: 2 44 34;
+  --mdz-warn: 251 191 36;
+  --mdz-warn-soft: 53 38 8;
+}
+
+/* body 默认字体来自 tailwind fontFamily.sans(Preflight 落到 html),这里只做渲染细节 */
+body {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* 对话区滚动条微调(thin-scroll 钩子保留,色值走 token 变量,自动适配暗色) */
 .thin-scroll::-webkit-scrollbar {
   width: 6px;
 }
 .thin-scroll::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: rgb(var(--mdz-line-strong));
   border-radius: 3px;
 }
 .thin-scroll::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* ============================================================
+   动效(G7 页面切换 + 微交互),全部 150-250ms,支持 reduced-motion 降级
+   ============================================================ */
+@keyframes mdz-fade-up {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes mdz-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.page-enter { animation: mdz-fade-up 220ms ease-out both; }
+.bubble-in { animation: mdz-fade-up 180ms ease-out both; }
+.fade-in { animation: mdz-fade-in 200ms ease-out both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter, .bubble-in, .fade-in {
+    animation: none;
+  }
+}
+
+/* ::selection 用主色低透明度,精致感小细节 */
+::selection {
+  background: rgb(var(--mdz-primary) / 0.15);
+}
+
+/* ============================================================
+   打印样式(R4,加分项):存档场景隐藏界面件,卡片去阴影
+   ============================================================ */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+  }
+  .shadow-sm {
+    box-shadow: none;
+  }
+  details > summary {
+    list-style: none;
+  }
+  details:not([open]) > summary + * {
+    display: none;
+  }
+}
+
+/* ============================================================
+   键盘焦点环(无障碍,B-4):键盘 Tab 聚焦有环、鼠标点击无环
+   注:outline 简写必须带 solid —— 省略时 outline-style 取初始值
+   none,环不会渲染
+   ============================================================ */
+:focus-visible {
+  outline: 2px solid rgb(var(--mdz-primary));
+  outline-offset: 2px;
+}
+:focus:not(:focus-visible) {
+  outline: none;
 }
