@@ -13,10 +13,11 @@ export interface LlmMessage {
   content: string;
 }
 
-/** 服务端读取 API key:优先环境变量,兜底读本机智谱 token 文件 */
+/** 服务端读取 API key:环境变量 GLM_API_KEY,或读取 GLM_KEY_FILE 指向的本机 key 文件 */
 export function getApiKey(): string | null {
   if (process.env.GLM_API_KEY) return process.env.GLM_API_KEY;
-  const file = process.env.GLM_KEY_FILE || "C:/Users/asus/.zcode/secrets/bigmodel-api.token";
+  const file = process.env.GLM_KEY_FILE;
+  if (!file) return null;
   try {
     return fs.readFileSync(file, "utf8").trim() || null;
   } catch {
