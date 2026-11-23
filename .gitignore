@@ -26,3 +26,8 @@ Thumbs.db
 .ai/
 .claude/
 .zcode/
+
+# local only: incremental build info, Vercel output, AI task briefs
+*.tsbuildinfo
+.vercel/
+/*任务书*.md
