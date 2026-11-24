@@ -3,7 +3,7 @@
 // 模型只产出 summary/weakness/redLines/practiceTomorrow 文本,解析失败有确定性兜底
 import { callJson } from "@/lib/glm";
 import { reportSystemPrompt } from "@/lib/prompts";
-import { Grade, InterviewHistoryItem, JobFamily, ReportData, ReportRow } from "@/lib/types";
+import { Grade, InterviewHistoryItem, JobFamily, ReportData, ReportRow, interviewTypeLabel, isInterviewType } from "@/lib/types";
 import { avgDims, buildRows } from "@/lib/scoring";
 
 interface ReportBody {
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
   }
 
   const jobFamily: JobFamily = isJobFamily(body?.jobFamily) ? body.jobFamily : "general";
-  const interviewType = body?.interviewType === "technical" ? "专业面" : "行为面";
+  const interviewType = interviewTypeLabel(isInterviewType(body?.interviewType) ? body.interviewType : "behavioral");
   const grades = Array.isArray(body?.grades) ? body!.grades! : [];
 
   const rows: ReportRow[] = buildRows(grades);

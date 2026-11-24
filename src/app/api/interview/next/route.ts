@@ -2,7 +2,7 @@
 // 服务端无状态,由客户端传完整对话历史与进度;服务端拼系统提示词后转发 GLM 流
 import { openStreamChat, type LlmMessage } from "@/lib/glm";
 import { interviewerSystemPrompt } from "@/lib/prompts";
-import { InterviewHistoryItem, JobFamily, InterviewType, TOTAL_QUESTIONS } from "@/lib/types";
+import { InterviewHistoryItem, JobFamily, TOTAL_QUESTIONS, isInterviewType } from "@/lib/types";
 
 interface NextBody {
   sessionId?: string;
@@ -19,9 +19,6 @@ interface NextBody {
 
 const isJobFamily = (v: unknown): v is JobFamily =>
   v === "frontend" || v === "operations" || v === "general";
-
-const isInterviewType = (v: unknown): v is InterviewType =>
-  v === "behavioral" || v === "technical";
 
 function clampInt(n: unknown, min: number, max: number): number {
   const v = Math.round(Number(n));

@@ -32,6 +32,11 @@ export function interviewTypeLabel(id: string): string {
   return INTERVIEW_TYPES.find((t) => t.id === id)?.label ?? id;
 }
 
+/** 请求体守卫:以 INTERVIEW_TYPES 为唯一来源,新增面试类型时路由不必再改 */
+export function isInterviewType(v: unknown): v is InterviewType {
+  return INTERVIEW_TYPES.some((t) => t.id === v);
+}
+
 export const TOTAL_QUESTIONS = 5;
 
 export type ChatRole = "interviewer" | "candidate";
